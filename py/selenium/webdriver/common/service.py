@@ -58,13 +58,15 @@ class Service(ABC):
         log_file: SubprocessStdAlias = DEVNULL,
         env: typing.Optional[typing.Mapping[typing.Any, typing.Any]] = None,
         start_error_message: typing.Optional[str] = None,
+        **kwargs,
     ) -> None:
         self.path = executable
         self.port = port or utils.free_port()
         self.log_file = open(os.devnull, "wb") if not _HAS_NATIVE_DEVNULL and log_file == DEVNULL else log_file
         self.start_error_message = start_error_message or ""
         # Default value for every python subprocess: subprocess.Popen(..., creationflags=0)
-        self.creation_flags = 0
+        self.popen_kw = kwargs.pop("popen_kw", {})
+        self.creation_flags = self.popen_kw.pop("creation_flags", 0)
         self.env = env or os.environ
 
     @property
@@ -196,15 +198,17 @@ class Service(ABC):
         """
         cmd = [path]
         cmd.extend(self.command_line_args())
+        close_file_descriptors = self.popen_kw.pop("close_fds") or system() != "Windows"
         try:
             self.process = subprocess.Popen(
                 cmd,
                 env=self.env,
-                close_fds=system() != "Windows",
+                close_fds=close_file_descriptors,
                 stdout=self.log_file,
                 stderr=self.log_file,
                 stdin=PIPE,
                 creationflags=self.creation_flags,
+                **self.popen_kw,
             )
             logger.debug(f"Started executable: `{self.path}` in a child process with pid: {self.process.pid}")
         except TypeError:
