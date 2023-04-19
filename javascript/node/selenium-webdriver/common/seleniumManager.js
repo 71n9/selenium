@@ -30,7 +30,7 @@ const execSync = require('child_process').execSync
  * currently supported browsers for selenium-manager
  * @type {string[]}
  */
-const Browser = ['chrome', 'firefox', 'edge', 'iexplorer']
+const Browser = ['chrome', 'firefox', 'edge', 'MicrosoftEdge', 'iexplorer']
 
 /**
  * Determines the path of the correct Selenium Manager binary
@@ -58,33 +58,53 @@ function getBinary() {
 
 /**
  * Determines the path of the correct driver
- * @param {Browser|string} browser name to fetch the driver
+ * @param {Capabilities} options browser options to fetch the driver
  * @returns {string} path of the driver location
  */
 
-function driverLocation(browser) {
-  if (!Browser.includes(browser.toLocaleString())) {
+function driverLocation(options) {
+  if (!Browser.includes(options.getBrowserName().toLocaleString())) {
     throw new Error(
-      `Unable to locate driver associated with browser name: ${browser}`
+      `Unable to locate driver associated with browser name: ${options.getBrowserName()}`
     )
   }
 
-  let args = [getBinary(), '--browser', browser]
-  let result
+  let args = [getBinary(), '--browser', options.getBrowserName(), '--output', 'json']
 
+  if (options.getBrowserVersion() && options.getBrowserVersion() !== "") {
+    args.push("--browser-version", options.getBrowserVersion())
+  }
+
+  const vendorOptions = options.get('goog:chromeOptions') || options.get('ms:edgeOptions')
+                        || options.get('moz:firefoxOptions')
+  if (vendorOptions && vendorOptions.binary && vendorOptions.binary !== "") {
+    args.push("--browser-path", '"' + vendorOptions.binary + '"')
+  }
+
+  let output
   try {
-    result = execSync(args.join(' ')).toString()
+    output = JSON.parse(execSync(args.join(' ')).toString())
   } catch (e) {
-    throw new Error(
-      `Error executing command with ${args}\n${e.stdout.toString()}${e.stderr.toString()}`
-    )
+    let error
+    try {
+      error = JSON.parse(e.stdout.toString()).result.message
+    } catch (e) {
+      if (e instanceof SyntaxError) {
+        error = e.stdout.toString()
+      } else {
+        error = e.toString()
+      }
+    }
+    throw new Error(`Error executing command with ${args}: ${error}`)
   }
 
-  if (!result.startsWith('INFO\t')) {
-    throw new Error(`Unsuccessful command executed: ${args}\n${result}`)
+  for (const key in output.logs) {
+    if (output.logs[key].level === 'WARN') {
+      console.warn(`${output.logs[key].message}`)
+    }
   }
 
-  return result.replace('INFO\t', '').trim()
+  return output.result.message
 }
 
 // PUBLIC API

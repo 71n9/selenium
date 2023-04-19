@@ -17,11 +17,14 @@
 
 package org.openqa.selenium.chrome;
 
+import com.google.common.util.concurrent.Uninterruptibles;
+
 import org.junit.jupiter.api.Test;
 import org.openqa.selenium.Capabilities;
 import org.openqa.selenium.JavascriptExecutor;
 import org.openqa.selenium.WebDriver;
 import org.openqa.selenium.WebDriverException;
+import org.openqa.selenium.SessionNotCreatedException;
 import org.openqa.selenium.chromium.ChromiumNetworkConditions;
 import org.openqa.selenium.chromium.HasCasting;
 import org.openqa.selenium.chromium.HasCdp;
@@ -32,20 +35,17 @@ import org.openqa.selenium.remote.http.ClientConfig;
 import org.openqa.selenium.testing.Ignore;
 import org.openqa.selenium.testing.JupiterTestBase;
 import org.openqa.selenium.testing.NoDriverBeforeTest;
-import org.openqa.selenium.testing.drivers.WebDriverBuilder;
 
 import java.time.Duration;
 import java.util.List;
 import java.util.Map;
-import java.util.concurrent.TimeUnit;
 
 import static org.assertj.core.api.Assertions.assertThat;
 import static org.assertj.core.api.Assertions.assertThatExceptionOfType;
 import static org.assertj.core.api.Assertions.fail;
+import static org.assertj.core.api.AssertionsForClassTypes.assertThatThrownBy;
 import static org.assertj.core.api.Assumptions.assumeThat;
 import static org.openqa.selenium.testing.drivers.Browser.CHROME;
-
-import com.google.common.util.concurrent.Uninterruptibles;
 
 class ChromeDriverFunctionalTest extends JupiterTestBase {
 
@@ -69,6 +69,15 @@ class ChromeDriverFunctionalTest extends JupiterTestBase {
     options.setImplicitWaitTimeout(Duration.ofMillis(1));
     localDriver = ChromeDriver.builder().oneOf(options).build();
     assertThat(localDriver.manage().timeouts().getImplicitWaitTimeout()).isEqualTo(Duration.ofMillis(1));
+  }
+
+  @Test
+  @NoDriverBeforeTest
+  public void driverOverridesDefaultClientConfig() {
+    assertThatThrownBy(() -> {
+      ClientConfig clientConfig = ClientConfig.defaultConfig().readTimeout(Duration.ofSeconds(0));
+      localDriver = new ChromeDriver(ChromeDriverService.createDefaultService(), new ChromeOptions(), clientConfig);
+    }).isInstanceOf(SessionNotCreatedException.class);
   }
 
   @Test

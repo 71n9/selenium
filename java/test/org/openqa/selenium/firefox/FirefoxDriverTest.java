@@ -35,6 +35,7 @@ import org.openqa.selenium.ParallelTestRunner.Worker;
 import org.openqa.selenium.WebDriver;
 import org.openqa.selenium.WebElement;
 import org.openqa.selenium.build.InProject;
+import org.openqa.selenium.SessionNotCreatedException;
 import org.openqa.selenium.remote.CapabilityType;
 import org.openqa.selenium.remote.Command;
 import org.openqa.selenium.remote.CommandExecutor;
@@ -44,9 +45,7 @@ import org.openqa.selenium.remote.RemoteWebDriverBuilder;
 import org.openqa.selenium.remote.SessionId;
 import org.openqa.selenium.remote.UnreachableBrowserException;
 import org.openqa.selenium.remote.http.ClientConfig;
-import org.openqa.selenium.support.ui.ExpectedCondition;
 import org.openqa.selenium.support.ui.WebDriverWait;
-import org.openqa.selenium.testing.Ignore;
 import org.openqa.selenium.testing.JupiterTestBase;
 import org.openqa.selenium.testing.NeedsFreshDriver;
 import org.openqa.selenium.testing.NoDriverAfterTest;
@@ -64,6 +63,7 @@ import java.util.Random;
 
 import static org.assertj.core.api.Assertions.assertThat;
 import static org.assertj.core.api.Assertions.assertThatExceptionOfType;
+import static org.assertj.core.api.AssertionsForClassTypes.assertThatThrownBy;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 import static org.junit.jupiter.api.Assertions.fail;
 import static org.junit.jupiter.api.Assumptions.assumeTrue;
@@ -76,7 +76,6 @@ import static org.openqa.selenium.WaitingConditions.elementValueToEqual;
 import static org.openqa.selenium.remote.CapabilityType.ACCEPT_INSECURE_CERTS;
 import static org.openqa.selenium.remote.CapabilityType.PAGE_LOAD_STRATEGY;
 import static org.openqa.selenium.support.ui.ExpectedConditions.titleIs;
-import static org.openqa.selenium.testing.drivers.Browser.FIREFOX;
 
 class FirefoxDriverTest extends JupiterTestBase {
 
@@ -85,10 +84,10 @@ class FirefoxDriverTest extends JupiterTestBase {
   private static final String EXT_UNSIGNED_ZIP = "common/extensions/webextensions-selenium-example-unsigned.zip";
   private static final String EXT_SIGNED_DIR = "common/extensions/webextensions-selenium-example-signed";
   private static final String EXT_UNSIGNED_DIR = "common/extensions/webextensions-selenium-example";
-  private static char[] CHARS =
+  private static final char[] CHARS =
     "ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz1234567890!\"§$%&/()+*~#',.-_:;\\"
       .toCharArray();
-  private static Random RANDOM = new Random();
+  private static final Random RANDOM = new Random();
 
   private static String randomString() {
     int n = 20 + RANDOM.nextInt(80);
@@ -118,6 +117,15 @@ class FirefoxDriverTest extends JupiterTestBase {
     options.setImplicitWaitTimeout(Duration.ofMillis(1));
     localDriver = FirefoxDriver.builder().oneOf(options).build();
     assertThat(localDriver.manage().timeouts().getImplicitWaitTimeout()).isEqualTo(Duration.ofMillis(1));
+  }
+
+  @Test
+  @NoDriverBeforeTest
+  public void driverOverridesDefaultClientConfig() {
+    assertThatThrownBy(() -> {
+      ClientConfig clientConfig = ClientConfig.defaultConfig().readTimeout(Duration.ofSeconds(0));
+      localDriver = new FirefoxDriver(GeckoDriverService.createDefaultService(), new FirefoxOptions(), clientConfig);
+    }).isInstanceOf(SessionNotCreatedException.class);
   }
 
   @Test
@@ -365,10 +373,6 @@ class FirefoxDriverTest extends JupiterTestBase {
     localDriver = new FirefoxDriver(new FirefoxOptions().addArguments("-headless"));
 
     assertThat(((FirefoxDriver) localDriver).getCapabilities().getCapability("moz:headless")).isEqualTo(true);
-  }
-
-  private ExpectedCondition<Boolean> urlToBe(final String expectedUrl) {
-    return driver1 -> expectedUrl.equals(driver1.getCurrentUrl());
   }
 
   @Test

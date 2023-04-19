@@ -19,6 +19,9 @@
 using System;
 using System.Collections.Generic;
 using System.Diagnostics;
+using Newtonsoft.Json;
+using OpenQA.Selenium.Internal;
+using System.Globalization;
 
 #if !NET45 && !NET46 && !NET47
 using System.Runtime.InteropServices;
@@ -35,12 +38,6 @@ namespace OpenQA.Selenium
     public static class SeleniumManager
     {
         private static string binary;
-        private static readonly List<string> KnownDrivers = new List<string>() {
-            "geckodriver",
-            "chromedriver",
-            "msedgedriver",
-            "IEDriverServer"
-        };
 
         /// <summary>
         /// Determines the location of the correct driver.
@@ -49,18 +46,52 @@ namespace OpenQA.Selenium
         /// <returns>
         /// The location of the driver.
         /// </returns>
-        public static string DriverPath(string driverName)
+        public static string DriverPath(DriverOptions options)
         {
-            driverName = driverName.Replace(".exe", "");
-            if (!KnownDrivers.Contains(driverName))
-            {
-                throw new WebDriverException("Unable to locate driver with name: " + driverName);
-            }
             var binaryFile = Binary;
             if (binaryFile == null) return null;
 
-            var arguments = "--driver " + driverName;
-            return RunCommand(binaryFile, arguments);
+            StringBuilder argsBuilder = new StringBuilder();
+            argsBuilder.AppendFormat(CultureInfo.InvariantCulture, " --browser \"{0}\"", options.BrowserName);
+            argsBuilder.Append(" --output json");
+
+            if (!string.IsNullOrEmpty(options.BrowserVersion))
+            {
+                argsBuilder.AppendFormat(CultureInfo.InvariantCulture, " --browser-version {0}", options.BrowserVersion);
+            }
+
+            string browserBinary = BrowserBinary(options);
+            if (!string.IsNullOrEmpty(browserBinary))
+            {
+                argsBuilder.AppendFormat(CultureInfo.InvariantCulture, " --browser-path \"{0}\"", browserBinary);
+            }
+
+
+            return RunCommand(binaryFile, argsBuilder.ToString());
+        }
+
+
+        /// <summary>
+        /// Extracts the browser binary location from the vendor options when present. Only Chrome, Firefox, and Edge.
+        /// </summary>
+        private static string BrowserBinary(DriverOptions options)
+        {
+            ICapabilities capabilities = options.ToCapabilities();
+            string[] vendorOptionsCapabilities = { "moz:firefoxOptions", "goog:chromeOptions", "ms:edgeOptions" };
+            foreach (string vendorOptionsCapability in vendorOptionsCapabilities)
+            {
+                try
+                {
+                    Dictionary<string, object> vendorOptions = capabilities.GetCapability(vendorOptionsCapability) as Dictionary<string, object>;
+                    return vendorOptions["binary"] as string;
+                }
+                catch (Exception)
+                {
+                    // no-op, it would be ideal to at least log the exception but the C# do not log anything at the moment 
+                }
+            }
+
+            return null;
         }
 
         /// <summary>
@@ -123,12 +154,10 @@ namespace OpenQA.Selenium
             try
             {
                 process.OutputDataReceived += outputHandler;
-                process.ErrorDataReceived += outputHandler;
 
                 process.Start();
 
                 process.BeginOutputReadLine();
-                process.BeginErrorReadLine();
 
                 process.WaitForExit();
             }
@@ -140,17 +169,29 @@ namespace OpenQA.Selenium
             {
                 processExitCode = process.ExitCode;
                 process.OutputDataReceived -= outputHandler;
-                process.ErrorDataReceived -= outputHandler;
             }
 
             string output = outputBuilder.ToString().Trim();
+            string result;
+            try
+            {
+                Dictionary<string, object> deserializedOutput = JsonConvert.DeserializeObject<Dictionary<string, object>>(output, new ResponseValueJsonConverter());
+                Dictionary<string, object> deserializedResult = deserializedOutput["result"] as Dictionary<string, object>;
+                result = deserializedResult["message"] as string;
+            }
+            catch (Exception ex)
+            {
+                throw new WebDriverException($"Error deserializing Selenium Manager's response: {output}", ex);
+            }
+
+            // We do not log any warnings coming from Selenium Manager like the other bindings as we don't have any logging in the .NET bindings
 
             if (processExitCode != 0)
             {
-                throw new WebDriverException($"Invalid response from process (code {processExitCode}): {fileName} {arguments}\n{output}");
+                throw new WebDriverException($"Invalid response from process (code {processExitCode}): {fileName} {arguments}\n{result}");
             }
 
-            return output.Replace("INFO\t", "");
+            return result;
         }
     }
 }
