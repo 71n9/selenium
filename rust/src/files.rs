@@ -37,6 +37,7 @@ const CACHE_FOLDER: &str = ".cache/selenium";
 const ZIP: &str = "zip";
 const GZ: &str = "gz";
 const XML: &str = "xml";
+const HTML: &str = "html";
 
 #[derive(Hash, Eq, PartialEq, Debug)]
 pub struct BrowserPath {
@@ -60,8 +61,8 @@ pub fn create_path_if_not_exists(path: &Path) {
 }
 
 pub fn uncompress(
-    compressed_file: &String,
-    target: PathBuf,
+    compressed_file: &str,
+    target: &Path,
     log: &Logger,
 ) -> Result<(), Box<dyn Error>> {
     let file = File::open(compressed_file)?;
@@ -77,8 +78,12 @@ pub fn uncompress(
         unzip(file, target, log)?
     } else if extension.eq_ignore_ascii_case(GZ) {
         untargz(file, target, log)?
-    } else if extension.eq_ignore_ascii_case(XML) {
-        return Err("Wrong browser/driver version".into());
+    } else if extension.eq_ignore_ascii_case(XML) || extension.eq_ignore_ascii_case(HTML) {
+        log.debug(format!(
+            "Wrong downloaded driver: {}",
+            fs::read_to_string(compressed_file).unwrap_or_default()
+        ));
+        return Err(PARSE_ERROR.into());
     } else {
         return Err(format!(
             "Downloaded file cannot be uncompressed ({} extension)",
@@ -89,7 +94,7 @@ pub fn uncompress(
     Ok(())
 }
 
-pub fn untargz(file: File, target: PathBuf, log: &Logger) -> Result<(), Box<dyn Error>> {
+pub fn untargz(file: File, target: &Path, log: &Logger) -> Result<(), Box<dyn Error>> {
     log.trace(format!("Untargz file to {}", target.display()));
     let tar = GzDecoder::new(&file);
     let mut archive = Archive::new(tar);
@@ -102,7 +107,7 @@ pub fn untargz(file: File, target: PathBuf, log: &Logger) -> Result<(), Box<dyn 
     Ok(())
 }
 
-pub fn unzip(file: File, target: PathBuf, log: &Logger) -> Result<(), Box<dyn Error>> {
+pub fn unzip(file: File, target: &Path, log: &Logger) -> Result<(), Box<dyn Error>> {
     log.trace(format!("Unzipping file to {}", target.display()));
     let mut archive = ZipArchive::new(file)?;
 
@@ -112,7 +117,7 @@ pub fn unzip(file: File, target: PathBuf, log: &Logger) -> Result<(), Box<dyn Er
             continue;
         }
         let target_file_name = target.file_name().unwrap().to_str().unwrap();
-        if target_file_name.eq_ignore_ascii_case(file.name()) {
+        if file.name().ends_with(target_file_name) {
             log.debug(format!(
                 "File extracted to {} ({} bytes)",
                 target.display(),
@@ -179,8 +184,9 @@ pub fn get_binary_extension(os: &str) -> &str {
     }
 }
 
-pub fn parse_version(version_text: String) -> Result<String, Box<dyn Error>> {
+pub fn parse_version(version_text: String, log: &Logger) -> Result<String, Box<dyn Error>> {
     if version_text.to_ascii_lowercase().contains("error") {
+        log.debug(format!("Error parsing version: {}", version_text));
         return Err(PARSE_ERROR.into());
     }
     let mut parsed_version = "".to_string();

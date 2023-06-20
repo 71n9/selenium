@@ -42,7 +42,7 @@ BROWSERS = {
                          "@selenium//conditions:default": ["-Dselenium.skiptest=true"],
                      }),
         "data": [],
-        "tags": COMMON_TAGS + ["exclusive", "ie"],
+        "tags": COMMON_TAGS + ["exclusive-if-local", "ie"],
     },
     "safari": {
         "deps": ["//java/src/org/openqa/selenium/safari"],
@@ -52,11 +52,13 @@ BROWSERS = {
                          "@selenium//conditions:default": ["-Dselenium.skiptest=true"],
                      }),
         "data": [],
-        "tags": COMMON_TAGS + ["exclusive", "safari"],
+        "tags": COMMON_TAGS + ["exclusive-if-local", "safari"],
     },
 }
 
-def selenium_test(name, test_class, size = "medium", browsers = BROWSERS.keys(), **kwargs):
+DEFAULT_BROWSERS = [b for b in BROWSERS.keys() if b != "ie"]
+
+def selenium_test(name, test_class, size = "medium", browsers = DEFAULT_BROWSERS, **kwargs):
     if len(browsers) == 0:
         fail("At least one browser must be specified.")
 
@@ -68,10 +70,16 @@ def selenium_test(name, test_class, size = "medium", browsers = BROWSERS.keys(),
     jvm_flags = kwargs["jvm_flags"] if "jvm_flags" in kwargs else []
     tags = kwargs["tags"] if "tags" in kwargs else []
 
+    remote = False
+    if "selenium-remote" in tags:
+        tags.remove("selenium-remote")
+        remote = True
+
     stripped_args = dict(**kwargs)
     stripped_args.pop("data", None)
     stripped_args.pop("jvm_flags", None)
     stripped_args.pop("tags", None)
+    inherited_env = stripped_args.pop("env_inherit", []) + ["REMOTE_BUILD"]
 
     all_tests = []
 
@@ -89,6 +97,7 @@ def selenium_test(name, test_class, size = "medium", browsers = BROWSERS.keys(),
             # Only allow linting on the default test
             tags = BROWSERS[browser]["tags"] + tags + ([] if test == name else ["no-lint"]),
             data = BROWSERS[browser]["data"] + data,
+            env_inherit = inherited_env,
             **stripped_args
         )
         if browser == default_browser:
@@ -98,7 +107,7 @@ def selenium_test(name, test_class, size = "medium", browsers = BROWSERS.keys(),
             )
         all_tests.append(":%s" % test)
 
-        if "selenium-remote" in tags:
+        if remote:
             java_junit5_test(
                 name = "%s-remote" % test,
                 test_class = test_class,

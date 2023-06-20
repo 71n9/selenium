@@ -31,6 +31,7 @@ module Selenium
 
         it 'accepts path set on class as String' do
           allow(SeleniumManager).to receive(:driver_path)
+          allow(Platform).to receive(:assert_file)
           allow(Platform).to receive(:assert_executable)
 
           service.driver_path = 'path'
@@ -42,6 +43,7 @@ module Selenium
 
         it 'accepts path set on class as proc' do
           allow(SeleniumManager).to receive(:driver_path)
+          allow(Platform).to receive(:assert_file)
           allow(Platform).to receive(:assert_executable)
 
           service.driver_path = proc { 'path' }
@@ -54,6 +56,7 @@ module Selenium
 
         it 'uses path from PATH' do
           allow(SeleniumManager).to receive(:driver_path)
+          allow(Platform).to receive(:assert_file)
           allow(Platform).to receive(:assert_executable)
           allow(Platform).to receive(:find_binary).and_return('path')
 
@@ -69,8 +72,7 @@ module Selenium
 
           expect {
             described_class.path(options, service)
-          }.to raise_error(WebDriver::Error::WebDriverError,
-                           /Unable to locate the #{driver} executable; for more information on how to install drivers/)
+          }.to raise_error(WebDriver::Error::NoSuchDriverError, %r{errors/driver_location})
         end
       end
 
@@ -83,6 +85,7 @@ module Selenium
 
         it 'accepts path set on class as String' do
           allow(SeleniumManager).to receive(:driver_path)
+          allow(Platform).to receive(:assert_file)
           allow(Platform).to receive(:assert_executable)
 
           service.driver_path = 'path'
@@ -94,6 +97,7 @@ module Selenium
 
         it 'accepts path set on class as proc' do
           allow(SeleniumManager).to receive(:driver_path)
+          allow(Platform).to receive(:assert_file)
           allow(Platform).to receive(:assert_executable)
 
           service.driver_path = proc { 'path' }
@@ -106,6 +110,7 @@ module Selenium
 
         it 'uses path from PATH' do
           allow(SeleniumManager).to receive(:driver_path)
+          allow(Platform).to receive(:assert_file)
           allow(Platform).to receive(:assert_executable)
           allow(Platform).to receive(:find_binary).and_return('path')
 
@@ -121,8 +126,7 @@ module Selenium
 
           expect {
             described_class.path(options, service)
-          }.to raise_error(WebDriver::Error::WebDriverError,
-                           /Unable to locate the #{driver} executable; for more information on how to install drivers/)
+          }.to raise_error(WebDriver::Error::NoSuchDriverError, %r{errors/driver_location})
         end
       end
 
@@ -135,6 +139,7 @@ module Selenium
 
         it 'accepts path set on class as String' do
           allow(SeleniumManager).to receive(:driver_path)
+          allow(Platform).to receive(:assert_file)
           allow(Platform).to receive(:assert_executable)
 
           service.driver_path = 'path'
@@ -146,6 +151,7 @@ module Selenium
 
         it 'accepts path set on class as proc' do
           allow(SeleniumManager).to receive(:driver_path)
+          allow(Platform).to receive(:assert_file)
           allow(Platform).to receive(:assert_executable)
 
           service.driver_path = proc { 'path' }
@@ -158,6 +164,7 @@ module Selenium
 
         it 'uses path from PATH' do
           allow(SeleniumManager).to receive(:driver_path)
+          allow(Platform).to receive(:assert_file)
           allow(Platform).to receive(:assert_executable)
           allow(Platform).to receive(:find_binary).and_return('path')
 
@@ -173,8 +180,7 @@ module Selenium
 
           expect {
             described_class.path(options, service)
-          }.to raise_error(WebDriver::Error::WebDriverError,
-                           /Unable to locate the #{driver} executable; for more information on how to install drivers/)
+          }.to raise_error(WebDriver::Error::NoSuchDriverError, %r{errors/driver_location})
         end
       end
 
@@ -187,6 +193,7 @@ module Selenium
 
         it 'accepts path set on class as String' do
           allow(SeleniumManager).to receive(:driver_path)
+          allow(Platform).to receive(:assert_file)
           allow(Platform).to receive(:assert_executable)
 
           service.driver_path = 'path'
@@ -198,6 +205,7 @@ module Selenium
 
         it 'accepts path set on class as proc' do
           allow(SeleniumManager).to receive(:driver_path)
+          allow(Platform).to receive(:assert_file)
           allow(Platform).to receive(:assert_executable)
 
           service.driver_path = proc { 'path' }
@@ -210,6 +218,7 @@ module Selenium
 
         it 'uses path from PATH' do
           allow(SeleniumManager).to receive(:driver_path)
+          allow(Platform).to receive(:assert_file)
           allow(Platform).to receive(:assert_executable)
           allow(Platform).to receive(:find_binary).and_return('path')
 
@@ -225,8 +234,7 @@ module Selenium
 
           expect {
             described_class.path(options, service)
-          }.to raise_error(WebDriver::Error::WebDriverError,
-                           /Unable to locate the #{driver} executable; for more information on how to install drivers/)
+          }.to raise_error(WebDriver::Error::NoSuchDriverError, %r{errors/driver_location})
         end
       end
 
@@ -239,6 +247,7 @@ module Selenium
 
         it 'accepts path set on class as String' do
           allow(SeleniumManager).to receive(:driver_path)
+          allow(Platform).to receive(:assert_file)
           allow(Platform).to receive(:assert_executable)
 
           service.driver_path = 'path'
@@ -250,6 +259,7 @@ module Selenium
 
         it 'accepts path set on class as proc' do
           allow(SeleniumManager).to receive(:driver_path)
+          allow(Platform).to receive(:assert_file)
           allow(Platform).to receive(:assert_executable)
 
           service.driver_path = proc { 'path' }
@@ -262,6 +272,7 @@ module Selenium
 
         it 'uses path from PATH' do
           allow(SeleniumManager).to receive(:driver_path)
+          allow(Platform).to receive(:assert_file)
           allow(Platform).to receive(:assert_executable)
           allow(Platform).to receive(:find_binary).and_return('path')
 
@@ -277,8 +288,7 @@ module Selenium
 
           expect {
             described_class.path(options, service)
-          }.to raise_error(WebDriver::Error::WebDriverError,
-                           /Unable to locate the #{driver} executable; for more information on how to install drivers/)
+          }.to raise_error(WebDriver::Error::NoSuchDriverError, %r{errors/driver_location})
         end
       end
     end

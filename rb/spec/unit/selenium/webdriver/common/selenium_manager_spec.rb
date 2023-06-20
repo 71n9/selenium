@@ -22,22 +22,27 @@ require File.expand_path('../spec_helper', __dir__)
 module Selenium
   module WebDriver
     describe SeleniumManager do
-      describe 'self.binary' do
+      describe '.binary' do
+        def stub_binary(binary)
+          allow(File).to receive(:exist?).with(a_string_ending_with(binary)).and_return(true)
+          allow(File).to receive(:executable?).with(a_string_ending_with(binary)).and_return(true)
+        end
+
         before do
           described_class.instance_variable_set(:@binary, nil)
         end
 
         it 'detects Windows' do
-          allow(File).to receive(:exist?).and_return(true)
-          allow(File).to receive(:executable?).and_return(true)
+          stub_binary('/windows/selenium-manager.exe')
+          allow(Platform).to receive(:assert_file)
           allow(Platform).to receive(:windows?).and_return(true)
 
           expect(described_class.send(:binary)).to match(%r{/windows/selenium-manager\.exe$})
         end
 
         it 'detects Mac' do
-          allow(File).to receive(:exist?).and_return(true)
-          allow(File).to receive(:executable?).and_return(true)
+          stub_binary('/macos/selenium-manager')
+          allow(Platform).to receive(:assert_file)
           allow(Platform).to receive(:windows?).and_return(false)
           allow(Platform).to receive(:mac?).and_return(true)
 
@@ -45,8 +50,8 @@ module Selenium
         end
 
         it 'detects Linux' do
-          allow(File).to receive(:exist?).and_return(true)
-          allow(File).to receive(:executable?).and_return(true)
+          stub_binary('/linux/selenium-manager')
+          allow(Platform).to receive(:assert_file)
           allow(Platform).to receive(:windows?).and_return(false)
           allow(Platform).to receive(:mac?).and_return(false)
           allow(Platform).to receive(:linux?).and_return(true)
@@ -55,11 +60,11 @@ module Selenium
         end
 
         it 'errors if cannot find' do
-          allow(File).to receive(:exist?).and_return(false)
+          allow(File).to receive(:exist?).with(a_string_including('selenium-manager')).and_return(false)
 
           expect {
             described_class.send(:binary)
-          }.to raise_error(Error::WebDriverError, /Unable to obtain Selenium Manager/)
+          }.to raise_error(Error::WebDriverError, /Selenium Manager binary located, but not a file/)
         end
       end
 
@@ -72,12 +77,6 @@ module Selenium
       end
 
       describe 'self.driver_path' do
-        it 'errors if not an option' do
-          expect {
-            described_class.driver_path(Remote::Capabilities.new(browser_name: 'chrome'))
-          }.to raise_error(ArgumentError, /SeleniumManager requires a WebDriver::Options instance/)
-        end
-
         it 'determines browser name by default' do
           allow(described_class).to receive(:run)
           allow(described_class).to receive(:binary).and_return('selenium-manager')
@@ -98,7 +97,26 @@ module Selenium
           described_class.driver_path(options)
 
           expect(described_class).to have_received(:run)
-            .with('selenium-manager', '--browser', 'chrome', '--output', 'json', '--browser-version', 1)
+            .with('selenium-manager',
+                  '--browser', 'chrome',
+                  '--output', 'json',
+                  '--browser-version', 1)
+        end
+
+        it 'uses proxy if specified' do
+          proxy = Selenium::WebDriver::Proxy.new(ssl: 'proxy')
+          allow(described_class).to receive(:run)
+          allow(described_class).to receive(:binary).and_return('selenium-manager')
+          allow(Platform).to receive(:assert_executable)
+          options = Options.chrome(proxy: proxy)
+
+          described_class.driver_path(options)
+
+          expect(described_class).to have_received(:run)
+            .with('selenium-manager',
+                  '--browser', 'chrome',
+                  '--output', 'json',
+                  '--proxy', 'proxy')
         end
 
         it 'uses browser location if specified' do

@@ -138,7 +138,7 @@ impl SeleniumManager for EdgeManager {
                             REMOVE_X86,
                             browser_path,
                         ),
-                        format_three_args(WMIC_COMMAND, ENV_LOCALAPPDATA, "", browser_path),
+                        format_three_args(WMIC_COMMAND_ENV, ENV_LOCALAPPDATA, "", browser_path),
                     ];
                     if !self.is_browser_version_unstable() {
                         commands.push(format_one_arg(
@@ -162,13 +162,15 @@ impl SeleniumManager for EdgeManager {
         self.driver_name
     }
 
-    fn request_driver_version(&self) -> Result<String, Box<dyn Error>> {
-        let browser_version = self.get_browser_version();
+    fn request_driver_version(&mut self) -> Result<String, Box<dyn Error>> {
+        let mut browser_version = self.get_major_browser_version();
         let mut metadata = get_metadata(self.get_logger());
-        let driver_ttl = self.get_config().driver_ttl;
 
-        match get_driver_version_from_metadata(&metadata.drivers, self.driver_name, browser_version)
-        {
+        match get_driver_version_from_metadata(
+            &metadata.drivers,
+            self.driver_name,
+            browser_version.as_str(),
+        ) {
             Some(driver_version) => {
                 self.log.trace(format!(
                     "Driver TTL is valid. Getting {} version from metadata",
@@ -177,26 +179,41 @@ impl SeleniumManager for EdgeManager {
                 Ok(driver_version)
             }
             _ => {
-                let driver_url = if browser_version.is_empty() {
-                    format!("{}{}", DRIVER_URL, LATEST_STABLE)
-                } else {
-                    format!(
-                        "{}{}_{}_{}",
-                        DRIVER_URL,
-                        LATEST_RELEASE,
-                        browser_version,
-                        self.get_os().to_uppercase()
-                    )
-                };
+                if browser_version.is_empty() {
+                    let latest_stable_url = format!("{}{}", DRIVER_URL, LATEST_STABLE);
+                    self.log.debug(format!(
+                        "Reading {} latest version from {}",
+                        &self.driver_name, latest_stable_url
+                    ));
+                    let latest_driver_version = read_version_from_link(
+                        self.get_http_client(),
+                        latest_stable_url,
+                        self.get_logger(),
+                    )?;
+                    browser_version = self.get_major_version(latest_driver_version.as_str())?;
+                    self.log.debug(format!(
+                        "Latest {} major version is {}",
+                        &self.driver_name, browser_version
+                    ));
+                }
+                let driver_url = format!(
+                    "{}{}_{}_{}",
+                    DRIVER_URL,
+                    LATEST_RELEASE,
+                    browser_version,
+                    self.get_os().to_uppercase()
+                );
                 self.log.debug(format!(
                     "Reading {} version from {}",
                     &self.driver_name, driver_url
                 ));
-                let driver_version = read_version_from_link(self.get_http_client(), driver_url)?;
+                let driver_version =
+                    read_version_from_link(self.get_http_client(), driver_url, self.get_logger())?;
 
-                if !browser_version.is_empty() {
+                let driver_ttl = self.get_driver_ttl();
+                if driver_ttl > 0 && !browser_version.is_empty() {
                     metadata.drivers.push(create_driver_metadata(
-                        browser_version,
+                        browser_version.as_str(),
                         self.driver_name,
                         &driver_version,
                         driver_ttl,
@@ -209,7 +226,7 @@ impl SeleniumManager for EdgeManager {
         }
     }
 
-    fn get_driver_url(&self) -> Result<String, Box<dyn Error>> {
+    fn get_driver_url(&mut self) -> Result<String, Box<dyn Error>> {
         let driver_version = self.get_driver_version();
         let os = self.get_os();
         let arch = self.get_arch();

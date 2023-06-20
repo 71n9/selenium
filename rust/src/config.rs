@@ -47,11 +47,12 @@ impl ManagerConfig {
     pub fn default(browser_name: &str, driver_name: &str) -> ManagerConfig {
         let self_os = OS;
         let self_arch = if WINDOWS.is(self_os) {
-            if run_shell_command(self_os, WMIC_COMMAND_OS.to_string())
-                .unwrap_or_default()
-                .contains("32")
-            {
+            let wmic_output =
+                run_shell_command(self_os, WMIC_COMMAND_OS.to_string()).unwrap_or_default();
+            if wmic_output.contains("32") {
                 ARCH_X86.to_string()
+            } else if wmic_output.contains("ARM") {
+                ARCH_ARM64.to_string()
             } else {
                 ARCH_AMD64.to_string()
             }
@@ -86,21 +87,6 @@ impl ManagerConfig {
             timeout: IntegerKey("timeout", REQUEST_TIMEOUT_SEC).get_value(),
             browser_ttl: IntegerKey("browser-ttl", TTL_BROWSERS_SEC).get_value(),
             driver_ttl: IntegerKey("driver-ttl", TTL_DRIVERS_SEC).get_value(),
-        }
-    }
-
-    #[allow(clippy::should_implement_trait)]
-    pub fn clone(config: &ManagerConfig) -> ManagerConfig {
-        ManagerConfig {
-            browser_version: config.browser_version.as_str().to_string(),
-            driver_version: config.driver_version.as_str().to_string(),
-            os: config.os.as_str().to_string(),
-            arch: config.arch.as_str().to_string(),
-            browser_path: config.browser_path.as_str().to_string(),
-            proxy: config.proxy.as_str().to_string(),
-            timeout: config.timeout,
-            browser_ttl: config.browser_ttl,
-            driver_ttl: config.driver_ttl,
         }
     }
 }

@@ -24,7 +24,7 @@
 const { platform } = require('process')
 const path = require('path')
 const fs = require('fs')
-const execSync = require('child_process').execSync
+const spawnSync = require('child_process').spawnSync
 
 /**
  * currently supported browsers for selenium-manager
@@ -47,7 +47,9 @@ function getBinary() {
   const file =
     directory === 'windows' ? 'selenium-manager.exe' : 'selenium-manager'
 
-  const filePath = path.join(__dirname, '..', '/bin', directory, file)
+  let seleniumManagerBasePath = path.join(__dirname, '..', '/bin')
+
+  const filePath = path.join(seleniumManagerBasePath, directory, file)
 
   if (!fs.existsSync(filePath)) {
     throw new Error(`Unable to obtain Selenium Manager`)
@@ -69,33 +71,66 @@ function driverLocation(options) {
     )
   }
 
-  let args = [getBinary(), '--browser', options.getBrowserName(), '--output', 'json']
+  console.debug(
+    'Applicable driver not found; attempting to install with Selenium Manager (Beta)'
+  )
 
-  if (options.getBrowserVersion() && options.getBrowserVersion() !== "") {
-    args.push("--browser-version", options.getBrowserVersion())
+  let args = ['--browser', options.getBrowserName(), '--output', 'json']
+
+  if (options.getBrowserVersion() && options.getBrowserVersion() !== '') {
+    args.push('--browser-version', options.getBrowserVersion())
   }
 
-  const vendorOptions = options.get('goog:chromeOptions') || options.get('ms:edgeOptions')
-                        || options.get('moz:firefoxOptions')
-  if (vendorOptions && vendorOptions.binary && vendorOptions.binary !== "") {
-    args.push("--browser-path", '"' + vendorOptions.binary + '"')
+  const vendorOptions =
+    options.get('goog:chromeOptions') ||
+    options.get('ms:edgeOptions') ||
+    options.get('moz:firefoxOptions')
+  if (vendorOptions && vendorOptions.binary && vendorOptions.binary !== '') {
+    args.push('--browser-path', '"' + vendorOptions.binary + '"')
   }
 
+  const proxyOptions = options.getProxy();
+
+  // Check if proxyOptions exists and has properties
+  if (proxyOptions && Object.keys(proxyOptions).length > 0) {
+    const httpProxy = proxyOptions['httpProxy'];
+    const sslProxy = proxyOptions['sslProxy'];
+
+    if (httpProxy !== undefined) {
+      args.push('--proxy', httpProxy);
+    }
+
+    else if (sslProxy !== undefined) {
+      args.push('--proxy', sslProxy);
+    }
+  }
+
+  const smBinary = getBinary()
+  const spawnResult = spawnSync(smBinary, args)
   let output
-  try {
-    output = JSON.parse(execSync(args.join(' ')).toString())
-  } catch (e) {
-    let error
-    try {
-      error = JSON.parse(e.stdout.toString()).result.message
-    } catch (e) {
-      if (e instanceof SyntaxError) {
-        error = e.stdout.toString()
-      } else {
-        error = e.toString()
+  if (spawnResult.status) {
+    let errorMessage
+    if (spawnResult.stderr.toString()) {
+      errorMessage = spawnResult.stderr.toString()
+    }
+    if (spawnResult.stdout.toString()) {
+      try {
+        output = JSON.parse(spawnResult.stdout.toString())
+        errorMessage = output.result.message
+      } catch (e) {
+        errorMessage = e.toString()
       }
     }
-    throw new Error(`Error executing command with ${args}: ${error}`)
+    throw new Error(
+      `Error executing command for ${smBinary} with ${args}: ${errorMessage}`
+    )
+  }
+  try {
+    output = JSON.parse(spawnResult.stdout.toString())
+  } catch (e) {
+    throw new Error(
+      `Error executing command for ${smBinary} with ${args}: ${e.toString()}`
+    )
   }
 
   for (const key in output.logs) {

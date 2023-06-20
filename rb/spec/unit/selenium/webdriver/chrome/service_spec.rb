@@ -27,7 +27,7 @@ module Selenium
           let(:service_path) { "/path/to/#{Service::EXECUTABLE}" }
 
           before do
-            allow(Platform).to receive(:assert_executable).and_return(true)
+            allow(Platform).to receive(:assert_executable)
           end
 
           after { described_class.driver_path = nil }
@@ -57,6 +57,18 @@ module Selenium
             service = described_class.new
 
             expect(service.extra_args).to be_empty
+          end
+
+          it 'uses sets log path to stdout' do
+            service = described_class.chrome(log: :stdout)
+
+            expect(service.log).to eq $stdout
+          end
+
+          it 'uses sets log path to stderr' do
+            service = described_class.chrome(log: :stderr)
+
+            expect(service.log).to eq $stderr
           end
 
           it 'uses provided args' do
@@ -101,6 +113,7 @@ module Selenium
 
           it 'is created when :url is not provided' do
             allow(SeleniumManager).to receive(:driver_path).and_return('path')
+            allow(Platform).to receive(:assert_file)
             allow(Platform).to receive(:assert_executable)
             allow(described_class).to receive(:new).and_return(service)
 
@@ -110,6 +123,7 @@ module Selenium
 
           it 'accepts :service without creating a new instance' do
             allow(SeleniumManager).to receive(:driver_path).and_return('path')
+            allow(Platform).to receive(:assert_file)
             allow(Platform).to receive(:assert_executable)
             allow(described_class).to receive(:new)
 

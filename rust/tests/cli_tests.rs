@@ -23,7 +23,8 @@ use std::str;
 #[rstest]
 #[case("chrome", "chromedriver", "", "")]
 #[case("chrome", "chromedriver", "105", "105.0.5195.52")]
-#[case("chrome", "chromedriver", "106", "106.0.5249.61")]
+#[case("chrome", "chromedriver", "114", "114.0.5735.90")]
+#[case("chrome", "chromedriver", "115", "115.0.5790.24")]
 #[case("edge", "msedgedriver", "", "")]
 #[case("edge", "msedgedriver", "105", "105.0")]
 #[case("edge", "msedgedriver", "106", "106.0")]
@@ -41,10 +42,16 @@ fn ok_test(
     );
 
     let mut cmd = Command::new(env!("CARGO_BIN_EXE_selenium-manager"));
-    cmd.args(["--browser", &browser, "--browser-version", &browser_version])
-        .assert()
-        .success()
-        .code(0);
+    cmd.args([
+        "--browser",
+        &browser,
+        "--browser-version",
+        &browser_version,
+        "--debug",
+    ])
+    .assert()
+    .success()
+    .code(0);
 
     let stdout = &cmd.unwrap().stdout;
     let output = match str::from_utf8(stdout) {
@@ -57,6 +64,7 @@ fn ok_test(
     if !browser_version.is_empty() && output.contains("cache") {
         assert!(output.contains(&driver_version));
     }
+    assert!(!output.contains("Trying with latest driver version"));
 }
 
 #[rstest]

@@ -33,20 +33,26 @@ namespace OpenQA.Selenium
         /// <param name="service">DriverService with the current path.</param>
         /// <param name="options">DriverOptions with the current browser options.</param>
         /// <returns>
-        /// The path of the driver.
+        /// The service with a verified driver executable path.
         /// </returns>
-        public static string GetPath(DriverService service, DriverOptions options)
+        public static DriverService VerifyDriverServicePath(DriverService service, DriverOptions options)
         {
             string executablePath = Path.Combine(service.DriverServicePath, service.DriverServiceExecutableName);
-            if (File.Exists(executablePath)) return executablePath;
+            if (File.Exists(executablePath)) return service;
             try
             {
-                return SeleniumManager.DriverPath(options);
+                executablePath = SeleniumManager.DriverPath(options);
+                service.DriverServicePath = Path.GetDirectoryName(executablePath);
+                service.DriverServiceExecutableName = Path.GetFileName(executablePath);
             }
             catch (Exception e)
             {
-                throw new WebDriverException($"Unable to locate driver with path: {executablePath}, for more information on how to install drivers see https://www.selenium.dev/documentation/webdriver/getting_started/install_drivers/", e);
+                throw new NoSuchDriverException($"Unable to obtain {service.DriverServiceExecutableName} using Selenium Manager", e);
             }
+
+            if (File.Exists(executablePath)) return service;
+
+            throw new NoSuchDriverException($"Unable to locate or obtain {service.DriverServiceExecutableName}");
         }
     }
 }
