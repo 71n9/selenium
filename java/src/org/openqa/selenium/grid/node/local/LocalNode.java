@@ -95,6 +95,7 @@ import org.openqa.selenium.grid.security.Secret;
 import org.openqa.selenium.internal.Debug;
 import org.openqa.selenium.internal.Either;
 import org.openqa.selenium.internal.Require;
+import org.openqa.selenium.io.FileHandler;
 import org.openqa.selenium.io.TemporaryFilesystem;
 import org.openqa.selenium.io.Zip;
 import org.openqa.selenium.json.Json;
@@ -104,8 +105,7 @@ import org.openqa.selenium.remote.http.HttpMethod;
 import org.openqa.selenium.remote.http.HttpRequest;
 import org.openqa.selenium.remote.http.HttpResponse;
 import org.openqa.selenium.remote.tracing.AttributeKey;
-import org.openqa.selenium.remote.tracing.EventAttribute;
-import org.openqa.selenium.remote.tracing.EventAttributeValue;
+import org.openqa.selenium.remote.tracing.AttributeMap;
 import org.openqa.selenium.remote.tracing.Span;
 import org.openqa.selenium.remote.tracing.Status;
 import org.openqa.selenium.remote.tracing.Tracer;
@@ -223,7 +223,7 @@ public class LocalNode extends Node {
                           .ifPresent(
                               value -> {
                                 downloadsTempFileSystem.invalidate(value);
-                                LOG.warning(
+                                LOG.fine(
                                     "Removing Downloads folder associated with "
                                         + notification.getKey());
                               });
@@ -231,7 +231,7 @@ public class LocalNode extends Node {
                           .ifPresent(
                               value -> {
                                 uploadsTempFileSystem.invalidate(value);
-                                LOG.warning(
+                                LOG.fine(
                                     "Removing Uploads folder associated with "
                                         + notification.getKey());
                               });
@@ -403,24 +403,21 @@ public class LocalNode extends Node {
     Require.nonNull("Session request", sessionRequest);
 
     try (Span span = tracer.getCurrentContext().createSpan("node.new_session")) {
-      Map<String, EventAttributeValue> attributeMap = new HashMap<>();
+      AttributeMap attributeMap = tracer.createAttributeMap();
+      attributeMap.put(AttributeKey.LOGGER_CLASS.getKey(), getClass().getName());
       attributeMap.put(
-          AttributeKey.LOGGER_CLASS.getKey(), EventAttribute.setValue(getClass().getName()));
+          "session.request.capabilities", sessionRequest.getDesiredCapabilities().toString());
       attributeMap.put(
-          "session.request.capabilities",
-          EventAttribute.setValue(sessionRequest.getDesiredCapabilities().toString()));
-      attributeMap.put(
-          "session.request.downstreamdialect",
-          EventAttribute.setValue(sessionRequest.getDownstreamDialects().toString()));
+          "session.request.downstreamdialect", sessionRequest.getDownstreamDialects().toString());
 
       int currentSessionCount = getCurrentSessionCount();
       span.setAttribute("current.session.count", currentSessionCount);
-      attributeMap.put("current.session.count", EventAttribute.setValue(currentSessionCount));
+      attributeMap.put("current.session.count", currentSessionCount);
 
       if (getCurrentSessionCount() >= maxSessionCount) {
         span.setAttribute(AttributeKey.ERROR.getKey(), true);
         span.setStatus(Status.RESOURCE_EXHAUSTED);
-        attributeMap.put("max.session.count", EventAttribute.setValue(maxSessionCount));
+        attributeMap.put("max.session.count", maxSessionCount);
         span.addEvent("Max session count reached", attributeMap);
         return Either.left(new RetrySessionRequestException("Max session count reached."));
       }
@@ -666,6 +663,13 @@ public class LocalNode extends Node {
       ImmutableMap<String, Map<String, Object>> result = ImmutableMap.of("value", data);
       return new HttpResponse().setContent(asJson(result));
     }
+    if (req.getMethod().equals(HttpMethod.DELETE)) {
+      File[] files = Optional.ofNullable(downloadsDirectory.listFiles()).orElse(new File[] {});
+      for (File file : files) {
+        FileHandler.delete(file);
+      }
+      return new HttpResponse();
+    }
     String raw = string(req);
     if (raw.isEmpty()) {
       throw new WebDriverException(
@@ -791,8 +795,11 @@ public class LocalNode extends Node {
       toUse = new PersistentCapabilities(cdpFiltered).setCapability("se:cdpEnabled", false);
     }
 
+    // Check if the user wants to use BiDi
+    boolean webSocketUrl = toUse.asMap().containsKey("webSocketUrl");
     // Add se:bidi if necessary to send the bidi url back
-    if ((isSupportingBiDi || toUse.getCapability("se:bidi") != null) && bidiEnabled) {
+    boolean bidiSupported = isSupportingBiDi || toUse.getCapability("se:bidi") != null;
+    if (bidiSupported && bidiEnabled && webSocketUrl) {
       String bidiPath = String.format("/session/%s/se/bidi", other.getId());
       toUse = new PersistentCapabilities(toUse).setCapability("se:bidi", rewrite(bidiPath));
     } else {
@@ -902,7 +909,8 @@ public class LocalNode extends Node {
       int remainingSessions = this.sessionCount.decrementAndGet();
       LOG.log(
           Debug.getDebugLogLevel(),
-          String.format("%s remaining sessions before draining Node", remainingSessions));
+          "{0} remaining sessions before draining Node",
+          remainingSessions);
       if (remainingSessions <= 0) {
         LOG.info(
             String.format(

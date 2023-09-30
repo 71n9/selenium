@@ -156,7 +156,7 @@ public class Connection implements Closeable {
     try (JsonOutput out = JSON.newOutput(json).writeClassName(false)) {
       out.write(serialized.build());
     }
-    LOG.log(getDebugLogLevel(), () -> String.format("-> %s", json));
+    LOG.log(getDebugLogLevel(), "-> {0}", json);
     socket.sendText(json);
 
     if (!command.getSendsResponse()) {
@@ -236,7 +236,7 @@ public class Connection implements Closeable {
     // TODO: decode once, and once only
 
     String asString = String.valueOf(data);
-    LOG.log(getDebugLogLevel(), () -> String.format("<- %s", asString));
+    LOG.log(getDebugLogLevel(), "<- {0}", asString);
 
     Map<String, Object> raw = JSON.toType(asString, MAP_TYPE);
     if (raw.get("id") instanceof Number
@@ -270,11 +270,19 @@ public class Connection implements Closeable {
     } else if (raw.get("method") instanceof String && raw.get("params") instanceof Map) {
       LOG.log(
           getDebugLogLevel(),
-          String.format(
-              "Method %s called with %d callbacks available",
-              raw.get("method"), eventCallbacks.keySet().size()));
+          "Method {0} called with {1} callbacks available",
+          new Object[] {raw.get("method"), eventCallbacks.keySet().size()});
       Lock lock = callbacksLock.readLock();
-      lock.lock();
+      // A waiting writer will block a reader to enter the lock, even if there are currently other
+      // readers holding the lock. TryLock will bypass the waiting writers and acquire the read
+      // lock.
+      // A thread processing an event (and holding the read-lock) might wait for another event
+      // before continue processing the event (and releasing the read-lock). Without tryLock this
+      // would end in a deadlock, as soon as a writer will try to acquire a write-lock.
+      // (e.g. the devtools.idealized.Network works this way)
+      if (!lock.tryLock()) {
+        lock.lock();
+      }
       try {
         // TODO: Also only decode once.
         eventCallbacks.keySet().stream()
@@ -282,7 +290,8 @@ public class Connection implements Closeable {
                 event ->
                     LOG.log(
                         getDebugLogLevel(),
-                        String.format("Matching %s with %s", raw.get("method"), event.getMethod())))
+                        "Matching {0} with {1}",
+                        new Object[] {raw.get("method"), event.getMethod()}))
             .filter(event -> raw.get("method").equals(event.getMethod()))
             .forEach(
                 event -> {
@@ -316,9 +325,8 @@ public class Connection implements Closeable {
                       Consumer<Object> obj = (Consumer<Object>) action;
                       LOG.log(
                           getDebugLogLevel(),
-                          String.format(
-                              "Calling callback for %s using %s being passed %s",
-                              event, obj, finalValue));
+                          "Calling callback for {0} using {1} being passed {2}",
+                          new Object[] {event, obj, finalValue});
                       obj.accept(finalValue);
                     }
                   }

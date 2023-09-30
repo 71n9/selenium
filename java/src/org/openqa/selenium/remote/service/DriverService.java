@@ -50,7 +50,6 @@ import org.openqa.selenium.internal.Require;
 import org.openqa.selenium.net.PortProber;
 import org.openqa.selenium.net.UrlChecker;
 import org.openqa.selenium.os.CommandLine;
-import org.openqa.selenium.os.ExecutableFinder;
 
 /**
  * Manages the life and death of a native executable driver server. It is expected that the driver
@@ -131,11 +130,6 @@ public class DriverService implements Closeable {
     this.executable = executable;
   }
 
-  protected static String findExePath(String exeName, String exeProperty) {
-    String defaultPath = new ExecutableFinder().find(exeName);
-    return System.getProperty(exeProperty, defaultPath);
-  }
-
   protected List<String> getArgs() {
     return args;
   }
@@ -156,7 +150,7 @@ public class DriverService implements Closeable {
     return null;
   }
 
-  protected String getDriverProperty() {
+  public String getDriverProperty() {
     return null;
   }
 
@@ -204,7 +198,7 @@ public class DriverService implements Closeable {
         if (getDefaultDriverOptions().getBrowserName().isEmpty()) {
           throw new WebDriverException("Driver executable is null and browser name is not set.");
         }
-        this.executable = DriverFinder.getPath(this, getDefaultDriverOptions());
+        this.executable = DriverFinder.getPath(this, getDefaultDriverOptions()).getDriverPath();
       }
       LOG.fine(String.format("Starting driver at %s with %s", this.executable, this.args));
       process = new CommandLine(this.executable, args.toArray(new String[] {}));
@@ -449,40 +443,37 @@ public class DriverService implements Closeable {
       return DEFAULT_TIMEOUT;
     }
 
-    protected OutputStream getLogOutput(String logProperty) {
+    protected OutputStream getLogOutput() {
       if (logOutputStream != null) {
         return logOutputStream;
       }
-
       try {
-        File logFileLocation = getLogFile();
-        String logLocation;
-
-        if (logFileLocation == null) {
-          logLocation = System.getProperty(logProperty);
-        } else {
-          logLocation = logFileLocation.getAbsolutePath();
-        }
-
-        if (logLocation == null) {
-          LOG.info(
-              "Driver logs no longer sent to console by default; "
-                  + "https://www.selenium.dev/documentation/webdriver/drivers/service/#setting-log-output");
-          return ByteStreams.nullOutputStream();
-        }
-
-        switch (logLocation) {
-          case LOG_STDOUT:
-            return System.out;
-          case LOG_STDERR:
-            return System.err;
-          case LOG_NULL:
-            return ByteStreams.nullOutputStream();
-          default:
-            return new FileOutputStream(logLocation);
-        }
+        File logFile = getLogFile();
+        return logFile == null ? ByteStreams.nullOutputStream() : new FileOutputStream(logFile);
       } catch (FileNotFoundException e) {
         throw new RuntimeException(e);
+      }
+    }
+
+    protected void parseLogOutput(String logProperty) {
+      if (getLogFile() != null || logOutputStream != null) {
+        return;
+      }
+
+      String logLocation = System.getProperty(logProperty, LOG_NULL);
+      switch (logLocation) {
+        case LOG_STDOUT:
+          withLogOutput(System.out);
+          break;
+        case LOG_STDERR:
+          withLogOutput(System.err);
+          break;
+        case LOG_NULL:
+          withLogOutput(ByteStreams.nullOutputStream());
+          break;
+        default:
+          withLogFile(new File(logLocation));
+          break;
       }
     }
 
@@ -505,6 +496,8 @@ public class DriverService implements Closeable {
       List<String> args = createArgs();
 
       DS service = createDriverService(exe, port, timeout, args, environment);
+      service.sendOutputTo(getLogOutput());
+
       port = 0; // reset port to allow reusing this builder
 
       return service;

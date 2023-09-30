@@ -15,8 +15,9 @@
 // specific language governing permissions and limitations
 // under the License.
 
-use reqwest::Client;
+use reqwest::{Client, StatusCode};
 use serde::{Deserialize, Serialize};
+use serde_json::Value;
 use std::error::Error;
 use std::fs::File;
 use std::io::copy;
@@ -28,7 +29,7 @@ use crate::files::parse_version;
 use crate::Logger;
 
 #[tokio::main]
-pub async fn download_driver_to_tmp_folder(
+pub async fn download_to_tmp_folder(
     http_client: &Client,
     url: String,
     log: &Logger,
@@ -40,7 +41,12 @@ pub async fn download_driver_to_tmp_folder(
         tmp_dir.path()
     ));
 
-    let response = http_client.get(url).send().await?;
+    let response = http_client.get(&url).send().await?;
+    let status_code = response.status();
+    if status_code != StatusCode::OK {
+        return Err(format!("Unsuccessful response ({}) for URL {}", status_code, url).into());
+    }
+
     let target_path;
     let mut tmp_file = {
         let target_name = response
@@ -55,7 +61,7 @@ pub async fn download_driver_to_tmp_folder(
         target_path = String::from(target_name.to_str().unwrap());
 
         log.trace(format!(
-            "Temporal folder for driver package: {}",
+            "File downloaded to temporal folder: {}",
             target_path
         ));
         File::create(target_name)?
@@ -100,5 +106,14 @@ where
 {
     let content = read_content_from_link(http_client, url)?;
     let response: T = serde_json::from_str(&content)?;
+    Ok(response)
+}
+
+pub fn parse_generic_json_from_url(
+    http_client: &Client,
+    url: String,
+) -> Result<Value, Box<dyn Error>> {
+    let content = read_content_from_link(http_client, url)?;
+    let response: Value = serde_json::from_str(&content)?;
     Ok(response)
 }

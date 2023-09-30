@@ -80,6 +80,7 @@ import org.openqa.selenium.grid.data.SessionRequest;
 import org.openqa.selenium.grid.data.SessionRequestCapability;
 import org.openqa.selenium.grid.data.Slot;
 import org.openqa.selenium.grid.data.SlotId;
+import org.openqa.selenium.grid.data.SlotMatcher;
 import org.openqa.selenium.grid.data.TraceSessionRequest;
 import org.openqa.selenium.grid.distributor.Distributor;
 import org.openqa.selenium.grid.distributor.GridModel;
@@ -106,8 +107,7 @@ import org.openqa.selenium.internal.Require;
 import org.openqa.selenium.remote.SessionId;
 import org.openqa.selenium.remote.http.HttpClient;
 import org.openqa.selenium.remote.tracing.AttributeKey;
-import org.openqa.selenium.remote.tracing.EventAttribute;
-import org.openqa.selenium.remote.tracing.EventAttributeValue;
+import org.openqa.selenium.remote.tracing.AttributeMap;
 import org.openqa.selenium.remote.tracing.Span;
 import org.openqa.selenium.remote.tracing.Status;
 import org.openqa.selenium.remote.tracing.Tracer;
@@ -134,6 +134,7 @@ public class LocalDistributor extends Distributor implements AutoCloseable {
   private final ReadWriteLock lock = new ReentrantReadWriteLock(/* fair */ true);
   private final GridModel model;
   private final Map<NodeId, Node> nodes;
+  private final SlotMatcher slotMatcher;
 
   private final ScheduledExecutorService newSessionService =
       Executors.newSingleThreadScheduledExecutor(
@@ -179,7 +180,8 @@ public class LocalDistributor extends Distributor implements AutoCloseable {
       Duration healthcheckInterval,
       boolean rejectUnsupportedCaps,
       Duration sessionRequestRetryInterval,
-      int newSessionThreadPoolSize) {
+      int newSessionThreadPoolSize,
+      SlotMatcher slotMatcher) {
     super(tracer, clientFactory, registrationSecret);
     this.tracer = Require.nonNull("Tracer", tracer);
     this.bus = Require.nonNull("Event bus", bus);
@@ -192,6 +194,7 @@ public class LocalDistributor extends Distributor implements AutoCloseable {
     this.model = new GridModel(bus);
     this.nodes = new ConcurrentHashMap<>();
     this.rejectUnsupportedCaps = rejectUnsupportedCaps;
+    this.slotMatcher = slotMatcher;
     Require.nonNull("Session request interval", sessionRequestRetryInterval);
 
     bus.addListener(NodeStatusEvent.listener(this::register));
@@ -201,7 +204,7 @@ public class LocalDistributor extends Distributor implements AutoCloseable {
         NodeHeartBeatEvent.listener(
             nodeStatus -> {
               if (nodes.containsKey(nodeStatus.getNodeId())) {
-                model.touch(nodeStatus.getNodeId());
+                model.touch(nodeStatus);
               } else {
                 register(nodeStatus);
               }
@@ -263,7 +266,8 @@ public class LocalDistributor extends Distributor implements AutoCloseable {
         distributorOptions.getHealthCheckInterval(),
         distributorOptions.shouldRejectUnsupportedCaps(),
         newSessionQueueOptions.getSessionRequestRetryInterval(),
-        distributorOptions.getNewSessionThreadPoolSize());
+        distributorOptions.getNewSessionThreadPoolSize(),
+        distributorOptions.getSlotMatcher());
   }
 
   @Override
@@ -504,13 +508,11 @@ public class LocalDistributor extends Distributor implements AutoCloseable {
     Require.nonNull("Requests to process", request);
 
     Span span = tracer.getCurrentContext().createSpan("distributor.new_session");
-    Map<String, EventAttributeValue> attributeMap = new HashMap<>();
+    AttributeMap attributeMap = tracer.createAttributeMap();
     try {
-      attributeMap.put(
-          AttributeKey.LOGGER_CLASS.getKey(), EventAttribute.setValue(getClass().getName()));
+      attributeMap.put(AttributeKey.LOGGER_CLASS.getKey(), getClass().getName());
 
-      attributeMap.put(
-          "request.payload", EventAttribute.setValue(request.getDesiredCapabilities().toString()));
+      attributeMap.put("request.payload", request.getDesiredCapabilities().toString());
       String sessionReceivedMessage = "Session request received by the Distributor";
       span.addEvent(sessionReceivedMessage, attributeMap);
       LOG.info(
@@ -523,8 +525,7 @@ public class LocalDistributor extends Distributor implements AutoCloseable {
         EXCEPTION.accept(attributeMap, exception);
         attributeMap.put(
             AttributeKey.EXCEPTION_MESSAGE.getKey(),
-            EventAttribute.setValue(
-                "Unable to create session. No capabilities found: " + exception.getMessage()));
+            "Unable to create session. No capabilities found: " + exception.getMessage());
         span.addEvent(AttributeKey.EXCEPTION_EVENT.getKey(), attributeMap);
         return Either.left(exception);
       }
@@ -569,7 +570,7 @@ public class LocalDistributor extends Distributor implements AutoCloseable {
           SESSION_ID_EVENT.accept(attributeMap, sessionId);
           CAPABILITIES_EVENT.accept(attributeMap, sessionCaps);
           span.setAttribute(SESSION_URI.getKey(), sessionUri);
-          attributeMap.put(SESSION_URI.getKey(), EventAttribute.setValue(sessionUri));
+          attributeMap.put(SESSION_URI.getKey(), sessionUri);
 
           String sessionCreatedMessage = "Session created by the Distributor";
           span.addEvent(sessionCreatedMessage, attributeMap);
@@ -591,13 +592,13 @@ public class LocalDistributor extends Distributor implements AutoCloseable {
                 "Will re-attempt to find a node which can run this session", lastFailure);
         attributeMap.put(
             AttributeKey.EXCEPTION_MESSAGE.getKey(),
-            EventAttribute.setValue("Will retry session " + request.getRequestId()));
+            "Will retry session " + request.getRequestId());
 
       } else {
         EXCEPTION.accept(attributeMap, lastFailure);
         attributeMap.put(
             AttributeKey.EXCEPTION_MESSAGE.getKey(),
-            EventAttribute.setValue("Unable to create session: " + lastFailure.getMessage()));
+            "Unable to create session: " + lastFailure.getMessage());
       }
       span.setAttribute(AttributeKey.ERROR.getKey(), true);
       span.setStatus(Status.ABORTED);
@@ -609,8 +610,7 @@ public class LocalDistributor extends Distributor implements AutoCloseable {
 
       EXCEPTION.accept(attributeMap, e);
       attributeMap.put(
-          AttributeKey.EXCEPTION_MESSAGE.getKey(),
-          EventAttribute.setValue("Unable to create session: " + e.getMessage()));
+          AttributeKey.EXCEPTION_MESSAGE.getKey(), "Unable to create session: " + e.getMessage());
       span.addEvent(AttributeKey.EXCEPTION_EVENT.getKey(), attributeMap);
 
       return Either.left(e);
@@ -621,8 +621,7 @@ public class LocalDistributor extends Distributor implements AutoCloseable {
       EXCEPTION.accept(attributeMap, e);
       attributeMap.put(
           AttributeKey.EXCEPTION_MESSAGE.getKey(),
-          EventAttribute.setValue(
-              "Unknown error in LocalDistributor while creating session: " + e.getMessage()));
+          "Unknown error in LocalDistributor while creating session: " + e.getMessage());
       span.addEvent(AttributeKey.EXCEPTION_EVENT.getKey(), attributeMap);
 
       return Either.left(new SessionNotCreatedException(e.getMessage(), e));
@@ -661,7 +660,7 @@ public class LocalDistributor extends Distributor implements AutoCloseable {
     Lock writeLock = lock.writeLock();
     writeLock.lock();
     try {
-      Set<SlotId> slotIds = slotSelector.selectSlot(caps, getAvailableNodes());
+      Set<SlotId> slotIds = slotSelector.selectSlot(caps, getAvailableNodes(), slotMatcher);
       if (slotIds.isEmpty()) {
         LOG.log(
             getDebugLogLevel(),
@@ -682,7 +681,7 @@ public class LocalDistributor extends Distributor implements AutoCloseable {
   }
 
   private boolean isNotSupported(Capabilities caps) {
-    return getAvailableNodes().stream().noneMatch(node -> node.hasCapability(caps));
+    return getAvailableNodes().stream().noneMatch(node -> node.hasCapability(caps, slotMatcher));
   }
 
   private boolean reserve(SlotId id) {
@@ -750,8 +749,21 @@ public class LocalDistributor extends Distributor implements AutoCloseable {
 
     @Override
     public void run() {
-      boolean loop = true;
-      while (loop) {
+      Set<RequestId> inQueue;
+      boolean pollQueue;
+
+      if (rejectUnsupportedCaps) {
+        inQueue =
+            sessionQueue.getQueueContents().stream()
+                .map(SessionRequestCapability::getRequestId)
+                .collect(Collectors.toSet());
+        pollQueue = !inQueue.isEmpty();
+      } else {
+        inQueue = null;
+        pollQueue = !sessionQueue.peekEmpty();
+      }
+
+      if (pollQueue) {
         // We deliberately run this outside of a lock: if we're unsuccessful
         // starting the session, we just put the request back on the queue.
         // This does mean, however, that under high contention, we might end
@@ -759,25 +771,22 @@ public class LocalDistributor extends Distributor implements AutoCloseable {
         Map<Capabilities, Long> stereotypes =
             getAvailableNodes().stream()
                 .filter(NodeStatus::hasCapacity)
-                .map(
-                    node ->
-                        node.getSlots().stream()
-                            .map(Slot::getStereotype)
-                            .collect(Collectors.toList()))
-                .flatMap(Collection::stream)
-                .collect(Collectors.groupingBy(ImmutableCapabilities::new, Collectors.counting()));
+                .flatMap(node -> node.getSlots().stream().map(Slot::getStereotype))
+                .collect(
+                    Collectors.groupingBy(ImmutableCapabilities::copyOf, Collectors.counting()));
 
         if (!stereotypes.isEmpty()) {
           List<SessionRequest> matchingRequests = sessionQueue.getNextAvailable(stereotypes);
           matchingRequests.forEach(
               req -> sessionCreatorExecutor.execute(() -> handleNewSessionRequest(req)));
-          loop = !matchingRequests.isEmpty();
-        } else {
-          loop = false;
         }
       }
+
       if (rejectUnsupportedCaps) {
-        checkMatchingSlot(sessionQueue.getQueueContents());
+        checkMatchingSlot(
+            sessionQueue.getQueueContents().stream()
+                .filter((src) -> inQueue.contains(src.getRequestId()))
+                .collect(Collectors.toList()));
       }
     }
 
@@ -802,25 +811,22 @@ public class LocalDistributor extends Distributor implements AutoCloseable {
       try (Span span =
           TraceSessionRequest.extract(tracer, sessionRequest)
               .createSpan("distributor.poll_queue")) {
-        Map<String, EventAttributeValue> attributeMap = new HashMap<>();
-        attributeMap.put(
-            AttributeKey.LOGGER_CLASS.getKey(), EventAttribute.setValue(getClass().getName()));
+        AttributeMap attributeMap = tracer.createAttributeMap();
+        attributeMap.put(AttributeKey.LOGGER_CLASS.getKey(), getClass().getName());
         span.setAttribute(AttributeKey.REQUEST_ID.getKey(), reqId.toString());
-        attributeMap.put(
-            AttributeKey.REQUEST_ID.getKey(), EventAttribute.setValue(reqId.toString()));
+        attributeMap.put(AttributeKey.REQUEST_ID.getKey(), reqId.toString());
 
-        attributeMap.put("request", EventAttribute.setValue(sessionRequest.toString()));
+        attributeMap.put("request", sessionRequest.toString());
         Either<SessionNotCreatedException, CreateSessionResponse> response =
             newSession(sessionRequest);
 
         if (response.isLeft() && response.left() instanceof RetrySessionRequestException) {
           try (Span childSpan = span.createSpan("distributor.retry")) {
             LOG.log(
-                Debug.getDebugLogLevel(),
-                String.format("Retrying %s", sessionRequest.getDesiredCapabilities()));
+                Debug.getDebugLogLevel(), "Retrying {0}", sessionRequest.getDesiredCapabilities());
             boolean retried = sessionQueue.retryAddToQueue(sessionRequest);
 
-            attributeMap.put("request.retry_add", EventAttribute.setValue(retried));
+            attributeMap.put("request.retry_add", retried);
             childSpan.addEvent("Retry adding to front of queue. No slot available.", attributeMap);
 
             if (retried) {

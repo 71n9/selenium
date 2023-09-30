@@ -69,11 +69,7 @@ class NettyMessages {
       request.removeHeader("Content-Length");
     }
 
-    for (String name : request.getHeaderNames()) {
-      for (String value : request.getHeaders(name)) {
-        builder.addHeader(name, value);
-      }
-    }
+    request.forEachHeader(builder::addHeader);
     if (request.getHeader("User-Agent") == null) {
       builder.addHeader("User-Agent", AddSeleniumUserAgent.USER_AGENT);
     }
@@ -138,7 +134,12 @@ class NettyMessages {
     } else if (uri.startsWith("http://") || uri.startsWith("https://")) {
       rawUrl = uri;
     } else {
-      rawUrl = baseUrl.toString().replaceAll("/$", "") + uri;
+      String base = baseUrl.toString();
+      if (base.endsWith("/")) {
+        rawUrl = base.substring(0, base.length() - 1) + uri;
+      } else {
+        rawUrl = base + uri;
+      }
     }
     return rawUrl;
   }

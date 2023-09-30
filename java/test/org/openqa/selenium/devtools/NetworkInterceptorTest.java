@@ -27,6 +27,7 @@ import static org.openqa.selenium.testing.Safely.safelyCall;
 import static org.openqa.selenium.testing.TestUtilities.isFirefoxVersionOlderThan;
 
 import com.google.common.net.MediaType;
+import java.util.Objects;
 import java.util.concurrent.atomic.AtomicBoolean;
 import org.junit.jupiter.api.AfterEach;
 import org.junit.jupiter.api.BeforeAll;
@@ -39,10 +40,12 @@ import org.openqa.selenium.remote.http.Contents;
 import org.openqa.selenium.remote.http.Filter;
 import org.openqa.selenium.remote.http.HttpResponse;
 import org.openqa.selenium.remote.http.Route;
+import org.openqa.selenium.testing.JupiterTestBase;
+import org.openqa.selenium.testing.NoDriverBeforeTest;
 import org.openqa.selenium.testing.drivers.Browser;
 import org.openqa.selenium.testing.drivers.WebDriverBuilder;
 
-class NetworkInterceptorTest {
+class NetworkInterceptorTest extends JupiterTestBase {
 
   private NettyAppServer appServer;
   private WebDriver driver;
@@ -57,7 +60,7 @@ class NetworkInterceptorTest {
 
   @BeforeEach
   public void setup() {
-    driver = new WebDriverBuilder().get();
+    driver = new WebDriverBuilder().get(Objects.requireNonNull(Browser.detect()).getCapabilities());
 
     assumeThat(driver).isInstanceOf(HasDevTools.class);
     assumeThat(isFirefoxVersionOlderThan(87, driver)).isFalse();
@@ -94,6 +97,7 @@ class NetworkInterceptorTest {
   }
 
   @Test
+  @NoDriverBeforeTest
   void shouldProceedAsNormalIfRequestIsNotIntercepted() {
     interceptor =
         new NetworkInterceptor(
@@ -107,6 +111,7 @@ class NetworkInterceptorTest {
   }
 
   @Test
+  @NoDriverBeforeTest
   void shouldAllowTheInterceptorToChangeTheResponse() {
     interceptor =
         new NetworkInterceptor(
@@ -128,6 +133,7 @@ class NetworkInterceptorTest {
   }
 
   @Test
+  @NoDriverBeforeTest
   void shouldBeAbleToReturnAMagicResponseThatCausesTheOriginalRequestToProceed() {
     AtomicBoolean seen = new AtomicBoolean(false);
 
@@ -151,6 +157,7 @@ class NetworkInterceptorTest {
   }
 
   @Test
+  @NoDriverBeforeTest
   void shouldClearListenersWhenNetworkInterceptorIsClosed() {
     try (NetworkInterceptor interceptor =
         new NetworkInterceptor(
@@ -176,6 +183,7 @@ class NetworkInterceptorTest {
   }
 
   @Test
+  @NoDriverBeforeTest
   void shouldBeAbleToInterceptAResponse() {
     try (NetworkInterceptor networkInterceptor =
         new NetworkInterceptor(
@@ -184,7 +192,7 @@ class NetworkInterceptorTest {
                 next ->
                     req -> {
                       HttpResponse res = next.execute(req);
-                      res.addHeader("Content-Type", MediaType.HTML_UTF_8.toString());
+                      res.setHeader("Content-Type", MediaType.HTML_UTF_8.toString());
                       res.setContent(Contents.utf8String("Sausages"));
                       return res;
                     })) {
@@ -197,6 +205,7 @@ class NetworkInterceptorTest {
   }
 
   @Test
+  @NoDriverBeforeTest
   void shouldHandleRedirects() {
     try (NetworkInterceptor networkInterceptor =
         new NetworkInterceptor(driver, (Filter) next -> next)) {

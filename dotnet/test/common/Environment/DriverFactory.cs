@@ -1,4 +1,3 @@
-using NUnit.Framework;
 using OpenQA.Selenium.Chrome;
 using OpenQA.Selenium.Edge;
 using OpenQA.Selenium.Firefox;
@@ -7,26 +6,17 @@ using OpenQA.Selenium.Safari;
 using System;
 using System.Collections.Generic;
 using System.Reflection;
+using OpenQA.Selenium.Chromium;
 
 namespace OpenQA.Selenium.Environment
 {
     public class DriverFactory
     {
-        string driverPath;
         private Dictionary<Browser, Type> serviceTypes = new Dictionary<Browser, Type>();
         private Dictionary<Browser, Type> optionsTypes = new Dictionary<Browser, Type>();
 
-        public DriverFactory(string driverPath)
+        public DriverFactory()
         {
-            if (string.IsNullOrEmpty(driverPath))
-            {
-                this.driverPath = TestContext.CurrentContext.TestDirectory;
-            }
-            else
-            {
-                this.driverPath = driverPath;
-            }
-
             this.PopulateServiceTypes();
             this.PopulateOptionsTypes();
         }
@@ -51,21 +41,17 @@ namespace OpenQA.Selenium.Environment
 
         public event EventHandler<DriverStartingEventArgs> DriverStarting;
 
-        public string DriverServicePath
+        public IWebDriver CreateDriver(Type driverType, bool logging = false)
         {
-            get { return this.driverPath; }
+            return CreateDriverWithOptions(driverType, null, logging);
         }
 
-        public IWebDriver CreateDriver(Type driverType)
-        {
-            return CreateDriverWithOptions(driverType, null);
-        }
-
-        public IWebDriver CreateDriverWithOptions(Type driverType, DriverOptions driverOptions)
+        public IWebDriver CreateDriverWithOptions(Type driverType, DriverOptions driverOptions, bool logging = false)
         {
             Browser browser = Browser.All;
             DriverService service = null;
             DriverOptions options = null;
+            bool enableLogging = logging;
 
             List<Type> constructorArgTypeList = new List<Type>();
             IWebDriver driver = null;
@@ -73,25 +59,47 @@ namespace OpenQA.Selenium.Environment
             {
                 browser = Browser.Chrome;
                 options = GetDriverOptions<ChromeOptions>(driverType, driverOptions);
-                service = CreateService<ChromeDriverService>(driverType);
+                service = CreateService<ChromeDriverService>();
+                if (enableLogging)
+                {
+                    ((ChromiumDriverService)service).EnableVerboseLogging = true;
+                }
+            }
+            else if (typeof(EdgeDriver).IsAssignableFrom(driverType))
+            {
+                browser = Browser.Edge;
+                options = GetDriverOptions<EdgeOptions>(driverType, driverOptions);
+                service = CreateService<EdgeDriverService>();
+                if (enableLogging)
+                {
+                    ((ChromiumDriverService)service).EnableVerboseLogging = true;
+                }
             }
             else if (typeof(InternetExplorerDriver).IsAssignableFrom(driverType))
             {
                 browser = Browser.IE;
                 options = GetDriverOptions<InternetExplorerOptions>(driverType, driverOptions);
-                service = CreateService<InternetExplorerDriverService>(driverType);
+                service = CreateService<InternetExplorerDriverService>();
+                if (enableLogging)
+                {
+                    ((InternetExplorerDriverService)service).LoggingLevel = InternetExplorerDriverLogLevel.Trace;
+                }
             }
             else if (typeof(FirefoxDriver).IsAssignableFrom(driverType))
             {
                 browser = Browser.Firefox;
                 options = GetDriverOptions<FirefoxOptions>(driverType, driverOptions);
-                service = CreateService<FirefoxDriverService>(driverType);
+                service = CreateService<FirefoxDriverService>();
+                if (enableLogging)
+                {
+                    ((FirefoxDriverService)service).LogLevel = FirefoxDriverLogLevel.Trace;
+                }
             }
             else if (typeof(SafariDriver).IsAssignableFrom(driverType))
             {
                 browser = Browser.Safari;
                 options = GetDriverOptions<SafariOptions>(driverType, driverOptions);
-                service = CreateService<SafariDriverService>(driverType);
+                service = CreateService<SafariDriverService>();
             }
 
             this.OnDriverLaunching(service, options);
@@ -164,49 +172,18 @@ namespace OpenQA.Selenium.Environment
             return mergedOptions;
         }
 
-        private T CreateService<T>(Type driverType) where T:DriverService
+        private T CreateService<T>() where T:DriverService
         {
             T service = default(T);
             Type serviceType = typeof(T);
 
-            // If the driver type has a static DefaultService property,
-            // get the value of that property, which should be a valid
-            // service of the generic type (T). Otherwise, invoke the
-            // static CreateDefaultService method on the driver service's
-            // type, which returns an instance of the type.
-            PropertyInfo defaultServiceProperty = driverType.GetProperty("DefaultService", BindingFlags.Public | BindingFlags.Static);
-            if (defaultServiceProperty != null && defaultServiceProperty.PropertyType == serviceType)
+            MethodInfo createDefaultServiceMethod = serviceType.GetMethod("CreateDefaultService", BindingFlags.Public | BindingFlags.Static, null, new Type[] { }, null);
+            if (createDefaultServiceMethod != null && createDefaultServiceMethod.ReturnType == serviceType)
             {
-                PropertyInfo servicePathProperty = driverType.GetProperty("ServicePath", BindingFlags.Public | BindingFlags.Static);
-                if (servicePathProperty != null)
-                {
-                    servicePathProperty.SetValue(null, this.driverPath);
-                }
-
-                service = (T)defaultServiceProperty.GetValue(null, null);
-            }
-            else
-            {
-                MethodInfo createDefaultServiceMethod = serviceType.GetMethod("CreateDefaultService", BindingFlags.Public | BindingFlags.Static, null, new Type[] { typeof(string) }, null);
-                if (createDefaultServiceMethod != null && createDefaultServiceMethod.ReturnType == serviceType)
-                {
-                    service = (T)createDefaultServiceMethod.Invoke(null, new object[] { this.driverPath });
-                }
+                service = (T)createDefaultServiceMethod.Invoke(null, new object[] {});
             }
 
             return service;
-        }
-
-        private object GetDefaultOptions(Type driverType)
-        {
-            PropertyInfo info = driverType.GetProperty("DefaultOptions", BindingFlags.Public | BindingFlags.Static);
-            if (info != null)
-            {
-                object propertyValue = info.GetValue(null, null);
-                return propertyValue;
-            }
-
-            return null;
         }
     }
 }
